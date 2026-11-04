@@ -1,0 +1,963 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>pretrain-ARC viewer</title>
+<meta name="description" content="Solve pretrain-ARC benchmark tasks and ARC-AGI-1 tasks in the browser, then see the answer, the rule the generator drew, and the Bayes floor.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Crect width='17' height='17' fill='%23000'/%3E%3Crect x='1' y='1' width='4.5' height='4.5' fill='%230074D9'/%3E%3Crect x='11.5' y='1' width='4.5' height='4.5' fill='%23FFDC00'/%3E%3Crect x='6.25' y='6.25' width='4.5' height='4.5' fill='%23FF4136'/%3E%3Crect x='1' y='11.5' width='4.5' height='4.5' fill='%232ECC40'/%3E%3Crect x='11.5' y='11.5' width='4.5' height='4.5' fill='%237FDBFF'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a sticky set bar on top, a narrow drawer of tasks (task list + your score) on the left, the task itself
+   (demonstrations, test, your answer, the reveal) filling the right. The grids carry all the colour. */
+:root {
+  --bg: #eceef2;
+  --panel: #f7f8fa;
+  --raised: #ffffff;
+  --ink: #181c24;
+  --muted: #586172;
+  --faint: #8b93a3;
+  --line: #d3d8e0;
+  --accent: #2b47c9;
+  --accent-soft: #dfe4fa;
+  --accent-ink: #ffffff;
+  --ok: #1d7446;
+  --ok-soft: #dcefe4;
+  --bad: #b3261e;
+  --bad-soft: #f7dedb;
+  --warn: #9a5800;
+  --gridline: #4b505a;
+  --sel: #ffffff;
+  --font-ui: "IBM Plex Sans", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111419; --panel: #181c23; --raised: #1f242d; --ink: #e5e8ee; --muted: #a0a8b7; --faint: #6f7787;
+    --line: #2b313c; --accent: #8197ff; --accent-soft: #263055; --accent-ink: #0c0f1c; --ok: #55c48b; --ok-soft: #173326;
+    --bad: #ff8073; --bad-soft: #3a1c1a; --warn: #e9ae55; --gridline: #4b505a; --sel: #ffffff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111419; --panel: #181c23; --raised: #1f242d; --ink: #e5e8ee; --muted: #a0a8b7; --faint: #6f7787;
+  --line: #2b313c; --accent: #8197ff; --accent-soft: #263055; --accent-ink: #0c0f1c; --ok: #55c48b; --ok-soft: #173326;
+  --bad: #ff8073; --bad-soft: #3a1c1a; --warn: #e9ae55; --gridline: #4b505a; --sel: #ffffff; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--font-ui); font-size: 14px; line-height: 1.45; margin: 0; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--panel); }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--muted); }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+
+/* ---- top bar ---- */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 10px; }
+.bar-in { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; max-width: 1480px; margin: 0 auto; }
+.brand { font-family: var(--font-mono); font-weight: 600; font-size: 15px; letter-spacing: .02em; white-space: nowrap; display: flex; align-items: center; gap: 8px; margin: 0; }
+.brand .glyph { display: inline-grid; grid-template-columns: repeat(3, 5px); gap: 1px; }
+.brand .glyph i { width: 5px; height: 5px; display: block; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--raised); }
+.seg button { border: 0; background: transparent; padding: 6px 11px; white-space: nowrap; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.ctl-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); margin-right: 6px; }
+.ctl { display: inline-flex; align-items: center; }
+.save { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.save-state { font-size: 12px; color: var(--faint); }
+.save-state b { font-weight: 500; color: var(--muted); }
+.save .btn { font-size: 12px; padding: 3px 8px; }
+@media (max-width: 600px) {
+  .ctl-label { display: none; }
+  .seg button { padding: 6px 8px; }
+  .wide { display: none; }
+  .brand { flex-basis: 100%; }
+}
+
+/* ---- the bench ---- */
+.bench { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 22px; max-width: 1480px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 32px; }
+.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 64px); align-self: start;
+  max-height: calc(100vh - 80px); overflow-y: auto; scrollbar-width: thin; }
+.main { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+@media (max-width: 880px) {
+  .bench { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; max-height: none; overflow: visible; }
+  .list { max-height: 240px; }
+}
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); font-weight: 500; }
+details.about summary { cursor: pointer; font-weight: 500; }
+details.about #about-body { max-height: 42vh; overflow-y: auto; }
+details.about p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+details.about p b { color: var(--ink); font-weight: 500; }
+
+/* score table */
+.rec { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 6px; }
+.rec td { padding: 3px 0; border-bottom: 1px dashed var(--line); }
+.rec tr:last-child td { border-bottom: 0; }
+.rec td.n { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
+.rec tr.you td { font-weight: 600; }
+.rec .whole { color: var(--faint); font-weight: 400; font-size: 11px; }
+.small { font-size: 12px; }
+
+/* filters + list */
+.filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.filters select { background: var(--raised); border: 1px solid var(--line); border-radius: var(--r); padding: 4px 6px; font-size: 12px; max-width: 100%; }
+.btn { background: var(--raised); border: 1px solid var(--line); border-radius: var(--r); padding: 6px 10px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn:hover { border-color: var(--faint); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn[disabled] { opacity: .45; cursor: default; }
+.btn kbd, .key { font-family: var(--font-mono); font-size: 10px; color: var(--faint); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
+.btn.primary kbd { color: inherit; border-color: currentColor; opacity: .7; }
+.list { position: relative; list-style: none; margin: 0; padding: 0; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); flex: 1 1 auto; min-height: 120px; }
+.list li button { width: 100%; display: grid; grid-template-columns: 16px minmax(0,1fr) auto; gap: 8px; align-items: center; text-align: left;
+  border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 6px 10px; }
+.list li:last-child button { border-bottom: 0; }
+.list li button:hover { background: var(--raised); }
+.list li button[aria-current="true"] { background: var(--accent-soft); }
+.list .tid { font-family: var(--font-mono); font-size: 13px; }
+.list .meta { font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
+.list-count { font-size: 12px; color: var(--faint); }
+.pip { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--faint); display: inline-block; position: relative; }
+.pip.prog { border-color: var(--warn); background: linear-gradient(90deg, var(--warn) 50%, transparent 50%); }
+.pip.ok1 { border-color: var(--ok); background: var(--ok); }
+.pip.ok { border-color: var(--ok); background: radial-gradient(circle, var(--ok) 40%, transparent 45%); }
+.pip.miss { border-color: var(--bad); background: var(--bad); }
+.pip.gave { border-color: var(--bad); background: transparent; }
+.pip.gave::after { content: ""; position: absolute; inset: 4px; background: var(--bad); border-radius: 50%; }
+
+/* task head */
+.thead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.thead h2 { font-family: var(--font-mono); font-size: 20px; font-weight: 600; letter-spacing: .01em; }
+.tag { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; color: var(--muted); background: var(--panel); white-space: nowrap; }
+.tag.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+.tag.bad { color: var(--bad); border-color: var(--bad); background: var(--bad-soft); }
+.tag.held { color: var(--warn); border-color: var(--warn); }
+.spacer { flex: 1; }
+.timer { font-family: var(--font-mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* grids */
+.section-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.section-h h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; font-weight: 600; color: var(--muted); }
+.pairs { display: flex; flex-wrap: wrap; gap: 14px; }
+.pair { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px; max-width: 100%; }
+.gwrap { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-width: 0; }
+.gwrap .cap { font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
+canvas.grid { display: block; image-rendering: pixelated; max-width: 100%; height: auto; }
+.arrow { color: var(--faint); font-size: 18px; flex: 0 0 auto; }
+.pair .idx { font-family: var(--font-mono); font-size: 11px; color: var(--faint); writing-mode: vertical-rl; transform: rotate(180deg); }
+
+/* test + editor */
+.test-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.workrow { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+.editor-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.editor-canvas { touch-action: none; cursor: crosshair; border-radius: 2px; box-shadow: 0 0 0 2px var(--accent); }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.palette { display: grid; grid-template-columns: repeat(10, 28px); gap: 4px; }
+.sw { width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--line); position: relative; padding: 0; }
+.sw span { position: absolute; right: 2px; bottom: 0; font-family: var(--font-mono); font-size: 9px; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; }
+.sw[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }
+.sizebox { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.sizebox input { width: 46px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r); padding: 4px 5px; font-family: var(--font-mono); font-size: 12px; }
+.hover { font-family: var(--font-mono); font-size: 11px; color: var(--faint); min-height: 1.4em; }
+.feedback { font-size: 14px; min-height: 1.5em; }
+.feedback.ok { color: var(--ok); font-weight: 500; }
+.feedback.bad { color: var(--bad); font-weight: 500; }
+.submitrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+/* notes */
+textarea#notes { width: 100%; min-height: 64px; resize: vertical; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; line-height: 1.45; }
+
+/* reveal */
+.reveal-body { display: flex; flex-direction: column; gap: 18px; margin-top: 14px; }
+.reveal-top { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.reveal-top .facts { flex: 1 1 540px; min-width: 0; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.fact { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; min-width: 0; }
+.fact h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); font-weight: 500; }
+.fact p { margin: 0; }
+.fact p + p { margin-top: 6px; }
+.verdict { font-weight: 600; }
+.verdict.ok { color: var(--ok); }
+.verdict.bad { color: var(--bad); }
+.verdict.warn { color: var(--warn); }
+ol.rule { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+ol.rule li { overflow-wrap: anywhere; }
+ol.rule code { font-family: var(--font-mono); font-size: 12px; color: var(--faint); margin-left: 6px; }
+.floor-tbl { border-collapse: collapse; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.floor-tbl td { padding: 1px 14px 1px 0; }
+.floor-tbl td.n { font-family: var(--font-mono); font-weight: 600; }
+.trace { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.trace .gwrap .cap { max-width: 190px; }
+pre.code { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; overflow-x: auto; margin: 0; }
+.empty { padding: 30px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--r); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--faint); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend .pip { width: 10px; height: 10px; }
+.keys { font-size: 12px; color: var(--faint); }
+
+/* footer */
+.foot { border-top: 1px solid var(--line); color: var(--faint); font-size: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 14px 24px; }
+.foot-in { max-width: 1480px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.foot a { color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .btn, .list li button { transition: background-color .12s, border-color .12s; } }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-in">
+    <h1 class="brand"><span class="glyph" aria-hidden="true"><i style="background:#0074D9"></i><i style="background:#000"></i><i style="background:#FFDC00"></i><i style="background:#000"></i><i style="background:#FF4136"></i><i style="background:#000"></i><i style="background:#2ECC40"></i><i style="background:#000"></i><i style="background:#7FDBFF"></i></span>pretrain-ARC viewer</h1>
+    <div class="ctl"><span class="ctl-label">Tasks</span>
+      <div class="seg" id="src">
+        <button type="button" data-src="pre" aria-pressed="false" title="The pretrain-ARC benchmark: 2,560 tasks from a known rule grammar">pretrain-ARC</button>
+        <button type="button" data-src="arc1-training" aria-pressed="false">ARC<span class="wide">-AGI</span>-1 training</button>
+        <button type="button" data-src="arc1-evaluation" aria-pressed="false">ARC<span class="wide">-AGI</span>-1 evaluation</button>
+      </div>
+    </div>
+    <div class="ctl" id="split-ctl" hidden><span class="ctl-label">Split</span>
+      <div class="seg" id="split">
+        <button type="button" data-split="in_dist" aria-pressed="false" title="Every step of the rule is one of the 201 steps the pretraining corpus uses">In-distribution</button>
+        <button type="button" data-split="held_out" aria-pressed="false" title="Exactly one step of the rule is one of the 50 steps the pretraining corpus never contains">Held-out step</button>
+      </div>
+    </div>
+    <div class="ctl" id="depth-ctl" hidden><span class="ctl-label">Depth</span>
+      <div class="seg" id="depth">
+        <button type="button" data-depth="1" aria-pressed="false" title="Rules of 1 step">1</button>
+        <button type="button" data-depth="2" aria-pressed="false" title="Rules of 2 steps">2</button>
+        <button type="button" data-depth="3" aria-pressed="false" title="Rules of 3 steps">3</button>
+        <button type="button" data-depth="4" aria-pressed="false" title="Rules of 4 steps">4</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="bench">
+  <aside class="side">
+    <div class="card">
+      <details class="about" id="about"><summary id="about-title">About this set</summary><div id="about-body"></div></details>
+    </div>
+    <div class="card">
+      <div class="eyebrow" id="record-title">Your score on this set</div>
+      <div id="record"></div>
+      <div class="save">
+        <span class="save-state" id="save-state" aria-live="polite">Attempts kept in <b>this browser</b></span>
+        <button type="button" class="btn" id="download" title="Save every attempt made in this browser as a JSON file">Download my attempts</button>
+      </div>
+    </div>
+    <div class="filters">
+      <select id="f-status" aria-label="Filter by your progress">
+        <option value="all">All tasks</option>
+        <option value="untried">Not tried</option>
+        <option value="prog">In progress</option>
+        <option value="done">Finished</option>
+        <option value="right">Solved</option>
+        <option value="wrong">Not solved</option>
+      </select>
+      <select id="f-extra" aria-label="Filter by task"></select>
+      <button type="button" class="btn" id="random">Random untried</button>
+    </div>
+    <div class="list-count" id="list-count"></div>
+    <ol class="list" id="list" aria-label="Tasks"></ol>
+    <div class="legend">
+      <span><i class="pip"></i>not tried</span><span><i class="pip prog"></i>in progress</span>
+      <span><i class="pip ok1"></i>right first try</span><span><i class="pip ok"></i>right on try 2</span>
+      <span><i class="pip miss"></i>out of tries</span><span><i class="pip gave"></i>gave up</span>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="empty" id="loading">Loading tasks…</div>
+  </main>
+</div>
+
+<footer class="foot">
+  <div class="foot-in">
+    <span><a href="https://github.com/jagilley/pretrain-arc">pretrain-ARC on GitHub</a></span>
+    <span>ARC-AGI-1 tasks: François Chollet, <a href="https://github.com/fchollet/ARC-AGI">ARC-AGI</a>, <a href="data/licenses/ARC-AGI-LICENSE.txt">Apache-2.0</a></span>
+    <span>Solvers for ARC-AGI-1 training tasks: Michael Hodel, <a href="https://github.com/michaelhodel/arc-dsl">arc-dsl</a>, <a href="data/licenses/arc-dsl-LICENSE.txt">MIT</a></span>
+    <span>Your attempts never leave this browser unless you download them.</span>
+  </div>
+</footer>
+
+<script>
+"use strict";
+const PAL = ["#000000", "#0074D9", "#FF4136", "#2ECC40", "#FFDC00", "#AAAAAA", "#F012BE", "#FF851B", "#7FDBFF", "#870C25"];
+const CNAME = ["black", "blue", "red", "green", "yellow", "grey", "magenta", "orange", "azure", "maroon"];
+const ATT = 2;                             // tries per test output, the ARC Prize convention, on every set
+const SPLIT_LABEL = { in_dist: "In-distribution", held_out: "Held-out step" };
+const SETS = {};
+for (const sp of ["in_dist", "held_out"]) for (const d of [1, 2, 3, 4])
+  SETS[`${sp}-d${d}`] = { kind: "pre", split: sp, depth: d, label: `${SPLIT_LABEL[sp]} · depth ${d}` };
+SETS["arc1-training"] = { kind: "arc", label: "ARC-AGI-1 · training" };
+SETS["arc1-evaluation"] = { kind: "arc", label: "ARC-AGI-1 · evaluation" };
+const DEFAULT_SET = "in_dist-d1";
+const PIPNAME = { untried: "not tried", prog: "in progress", ok1: "right first try", ok: "right on try 2", miss: "out of tries", gave: "gave up" };
+
+const el = id => document.getElementById(id);
+function h(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+const parse = s => s.split(",").map(r => Array.from(r, Number));
+const gstr = g => g.map(r => r.join("")).join(",");
+const clone = g => g.map(r => r.slice());
+const same = (a, b) => a.length === b.length && a.every((r, i) => r.length === b[i].length && r.every((v, j) => v === b[i][j]));
+// a probability as a percentage that never rounds an uncertain value to a certain one
+const pctP = x => x == null ? "—" : x <= 0 ? "0%" : x >= 1 ? "100%" : `${Math.min(99, Math.max(1, Math.round(100 * x)))}%`;
+const plural = (n, w, ws) => `${n} ${n === 1 ? w : ws || w + "s"}`;
+
+// ------------------------------------------------------------------------------------------------ storage
+// One record a task: {v, set, task, tests: [{tries, ok, ok_at, subs}], revealed, gave_up, seconds, notes, started, updated}.
+// Kept in this browser's localStorage only; "Download my attempts" saves them all as JSON.
+const LS_KEY = "pretrain-arc.recs.v1", LS_UI = "pretrain-arc.ui.v1";
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
+const Store = {
+  recs: lsGet(LS_KEY, {}),
+  key: (set, id) => `${set}--${id}`,
+  get(set, id) { return this.recs[this.key(set, id)] || null; },
+  ensure(set, task, seconds) {
+    const k = this.key(set, task.id);
+    if (!this.recs[k]) this.recs[k] = { v: 1, set, task: task.id, tests: task.test.map(() => ({ tries: 0, ok: false, ok_at: null, subs: [] })),
+      revealed: false, gave_up: false, seconds: Math.round(seconds || 0), notes: "", started: Date.now(), updated: Date.now() };
+    return this.recs[k];
+  },
+  put(rec) {
+    rec.updated = Date.now();
+    this.recs[this.key(rec.set, rec.task)] = rec;
+    setSave(lsSet(LS_KEY, this.recs));
+  },
+};
+function setSave(ok) {
+  const n = Object.keys(Store.recs).length;
+  el("save-state").innerHTML = ok ? `Attempts kept in <b>this browser</b>${n ? ` · ${n} task${n > 1 ? "s" : ""}` : ""}`
+    : "This browser won't keep attempts; <b>download them</b> to save them";
+}
+function taskIdOf(rec) {                   // the id the task has outside this page
+  const S = SETS[rec.set];
+  return S && S.kind === "pre" ? `${rec.set}-${rec.task}` : rec.task;
+}
+el("download").addEventListener("click", () => {
+  timerLeave(); if (state.task) timerOpen(Store.key(ui.set, state.task.id));
+  const recs = Object.values(Store.recs).sort((a, b) => (a.started || 0) - (b.started || 0));
+  const out = {
+    what: "pretrain-ARC viewer: attempts made in one browser",
+    exported: new Date().toISOString(),
+    tries_per_test: ATT,
+    records: recs.map(r => Object.assign({ task_id: taskIdOf(r), status: status(r) }, r)),
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: "application/json" }));
+  const a = h("a", { href: url, download: `pretrain-arc-attempts-${out.exported.slice(0, 10)}.json` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+// ------------------------------------------------------------------------------------------------ data
+const cache = {};
+function loadSet(set) {
+  if (!cache[set]) cache[set] = fetch(`data/${set}.json`)
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then(j => {
+      for (const t of j.tasks) for (const p of t.train.concat(t.test)) { p.i = parse(p.input); p.o = parse(p.output); }
+      return j;
+    })
+    .catch(e => { delete cache[set]; throw e; });
+  return cache[set];
+}
+
+// ------------------------------------------------------------------------------------------------ drawing
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function cellFor(g, maxPx, maxCell = 26, minCell = 3) {
+  const n = Math.max(g.length, g[0] ? g[0].length : 1);
+  return Math.max(minCell, Math.min(maxCell, Math.floor(maxPx / n)));
+}
+function drawGrid(cv, g, cell, opt = {}) {
+  const hh = g.length, w = hh ? g[0].length : 0, dpr = window.devicePixelRatio || 1;
+  const W = w * cell + 1, H = hh * cell + 1;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  cv.style.width = W + "px";
+  const x = cv.getContext("2d");
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  x.fillStyle = cssVar("--gridline"); x.fillRect(0, 0, W, H);
+  const gap = cell >= 6 ? 1 : 0;
+  for (let r = 0; r < hh; r++) for (let c = 0; c < w; c++) {
+    x.fillStyle = PAL[g[r][c]] || "#000"; x.fillRect(c * cell + gap, r * cell + gap, cell - gap, cell - gap);
+  }
+  if (opt.mark && opt.mark.size) {           // outline a set of flat indices along its outer edges
+    const m = opt.mark;
+    x.lineWidth = Math.max(2, Math.round(cell / 8)); x.strokeStyle = opt.markColor || cssVar("--sel");
+    x.setLineDash(opt.dash ? [Math.max(2, cell / 4), Math.max(2, cell / 6)] : []);
+    x.beginPath();
+    for (const p of m) {
+      const r = Math.floor(p / w), c = p % w, X = c * cell + .5, Y = r * cell + .5;
+      if (r === 0 || !m.has(p - w)) { x.moveTo(X, Y + 1); x.lineTo(X + cell, Y + 1); }
+      if (r === hh - 1 || !m.has(p + w)) { x.moveTo(X, Y + cell - 1); x.lineTo(X + cell, Y + cell - 1); }
+      if (c === 0 || !m.has(p - 1)) { x.moveTo(X + 1, Y); x.lineTo(X + 1, Y + cell); }
+      if (c === w - 1 || !m.has(p + 1)) { x.moveTo(X + cell - 1, Y); x.lineTo(X + cell - 1, Y + cell); }
+    }
+    x.shadowColor = "rgba(0,0,0,.85)"; x.shadowBlur = 2; x.stroke(); x.shadowBlur = 0; x.setLineDash([]);
+  }
+}
+function gridEl(g, maxPx, cap, opt = {}) {
+  const wrap = h("div", { class: "gwrap" });
+  const cv = h("canvas", { class: "grid", role: "img", "aria-label": `${g.length} by ${g[0].length} grid` });
+  drawGrid(cv, g, cellFor(g, maxPx, opt.maxCell), opt);
+  wrap.append(cv);
+  if (cap !== false) wrap.append(h("div", { class: "cap", text: cap || `${g.length}×${g[0].length}` }));
+  return wrap;
+}
+const mainW = () => el("main").clientWidth || 700;
+
+// ------------------------------------------------------------------------------------------------ state
+const ui = Object.assign({ src: "pre", split: "in_dist", depth: 1, set: DEFAULT_SET, ids: {}, color: 1, tool: "paint", fs: "all", fx: "all" }, lsGet(LS_UI, {}));
+const state = { data: null, task: null, testIx: 0, drafts: {}, undo: {}, giveUpArmed: false, fb: {},
+  timer: { key: null, base: 0, acc: 0, t0: null } };
+const viewSecs = {};                      // seconds on a task this visit before it had a record
+const saveUI = () => lsSet(LS_UI, ui);
+const setFromUI = () => ui.src === "pre" ? `${ui.split}-d${ui.depth}` : ui.src;
+
+// ------------------------------------------------------------------------------------------------ record helpers
+const testDone = t => t.ok || t.tries >= ATT;
+function status(rec) {
+  if (!rec) return "untried";
+  if (rec.tests.every(t => t.ok)) return rec.tests.every(t => t.ok_at === 1) ? "ok1" : "ok";
+  if (rec.revealed) return "gave";
+  if (rec.tests.every(testDone)) return "miss";
+  return rec.tests.some(t => t.tries > 0) ? "prog" : "untried";
+}
+const finished = rec => !!rec && (rec.revealed || rec.tests.every(testDone));
+const within = (rec, k) => rec.tests.every(t => t.ok && t.ok_at <= k);
+
+// ------------------------------------------------------------------------------------------------ timer
+function startTimer() { if (state.timer.t0 == null && document.visibilityState === "visible") state.timer.t0 = performance.now(); }
+function pauseTimer() { const T = state.timer; if (T.t0 != null) { T.acc += (performance.now() - T.t0) / 1000; T.t0 = null; } }
+const total = () => { const T = state.timer; return T.base + T.acc + (T.t0 != null ? (performance.now() - T.t0) / 1000 : 0); };
+function timerOpen(key) {
+  const rec = Store.recs[key];
+  state.timer = { key, base: rec ? rec.seconds || 0 : viewSecs[key] || 0, acc: 0, t0: null };
+  startTimer();
+}
+function timerLeave() {                   // fold this visit's seconds into the task's record (or the pre-record tally)
+  pauseTimer();
+  const k = state.timer.key; if (!k) return;
+  const rec = Store.recs[k];
+  if (!rec) { viewSecs[k] = total(); return; }
+  if (!finished(rec)) { const s = Math.round(total()); if (s !== rec.seconds) { rec.seconds = s; Store.put(rec); } }
+}
+document.addEventListener("visibilitychange", () => { document.visibilityState === "visible" ? startTimer() : pauseTimer(); });
+setInterval(() => {
+  const t = el("timer"); if (!t || !state.task) return;
+  const rec = Store.get(ui.set, state.task.id);
+  const s = finished(rec) ? rec.seconds : Math.round(total());
+  t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}, 500);
+
+// ------------------------------------------------------------------------------------------------ top bar
+function syncBar() {
+  for (const b of el("src").children) b.setAttribute("aria-pressed", String(b.dataset.src === ui.src));
+  for (const b of el("split").children) b.setAttribute("aria-pressed", String(b.dataset.split === ui.split));
+  for (const b of el("depth").children) b.setAttribute("aria-pressed", String(+b.dataset.depth === ui.depth));
+  el("split-ctl").hidden = el("depth-ctl").hidden = ui.src !== "pre";
+}
+const barClick = f => e => { const b = e.target.closest("button"); if (b) { f(b); openSet(); } };
+el("src").addEventListener("click", barClick(b => { ui.src = b.dataset.src; }));
+el("split").addEventListener("click", barClick(b => { ui.split = b.dataset.split; }));
+el("depth").addEventListener("click", barClick(b => { ui.depth = +b.dataset.depth; }));
+
+async function openSet(taskId) {
+  timerLeave();
+  state.task = null; state.timer.key = null;
+  ui.set = setFromUI(); saveUI(); syncBar();
+  const set = ui.set;
+  el("main").replaceChildren(h("div", { class: "empty", text: "Loading tasks…" }));
+  let data;
+  try { data = await loadSet(set); }
+  catch (e) {
+    el("main").replaceChildren(h("div", { class: "empty", text: `Couldn't load data/${set}.json (${e.message}). To run the viewer locally: python scripts/build_site.py, then serve site/ (cd site && python -m http.server).` }));
+    return;
+  }
+  if (ui.set !== set) return;
+  state.data = data;
+  renderAbout(); buildExtraFilter(); renderList(); renderRecord();
+  const want = taskId || ui.ids[set];
+  openTask(data.tasks.find(t => t.id === want) || data.tasks[0]);
+}
+
+// ------------------------------------------------------------------------------------------------ about
+function renderAbout() {
+  const S = SETS[ui.set], body = el("about-body"), n = state.data.tasks.length;
+  el("about-title").textContent = `About ${S.label}`;
+  const ps = S.kind === "arc" ? [
+    `The ${n} public ${ui.set === "arc1-training" ? "training" : "evaluation"} tasks of <a href="https://github.com/fchollet/ARC-AGI">ARC-AGI-1</a> (François Chollet, 2019). Grids are up to 30×30, and the output can be a different size from the input.`,
+    `You get <b>${ATT} tries</b> per test output, the ARC Prize convention. Your answer starts as a copy of the test input; set the size first if the output is a different shape.`,
+    ui.set === "arc1-training"
+      ? `Once you solve a task, run out of tries, or give up, the reveal shows the answer and Michael Hodel's hand-written solver for it: a short program in his <a href="https://github.com/michaelhodel/arc-dsl">arc-dsl</a>.`
+      : `Once you solve a task, run out of tries, or give up, the reveal shows the answer.`,
+  ] : [
+    `The pretrain-ARC benchmark's ${n} tasks with rules of depth ${S.depth} in the <b>${SPLIT_LABEL[S.split].toLowerCase()}</b> split: the same tasks as <span class="mono">benchmark/challenges.json</span>, where this set's ids look like <span class="mono">${ui.set}-0042</span>. Each has three demonstrations and one test, all 8×8 with a blank one-cell border, holding 4–5 objects of different sizes (2–6 cells) in the task's 3 colours.`,
+    `<b>The next paragraph gives away the rule space.</b> Skip it if you'd rather work the tasks out cold.`,
+    `An object is a 4-connected patch of one colour. A rule is ${plural(S.depth, "step")} applied in order. Each step picks one object (the largest; the smallest; the first or last in reading order, by its first cell; or the first object of a given colour) and does one thing to it: recolour it, delete it, move it one cell, flip it inside its bounding box, or stamp a copy one blank cell past its bounding box. Every step changes every grid of the task. Objects are found afresh after each step, so a step can merge or split objects for the next.`,
+    S.split === "in_dist"
+      ? `<b>In-distribution</b>: every step is one of the 201 steps (of 251) that the pretraining corpus uses.`
+      : `<b>Held-out step</b>: exactly one step, at a random position, is one of the 50 steps the pretraining corpus never contains; the others are among the 201 it uses.${S.depth === 1 ? " At depth 1 the whole rule is a held-out step." : ""}`,
+    `You get <b>${ATT} tries</b>, as in the ARC Prize. Once you solve a task, run out of tries, or give up, the reveal shows the answer, the rule the generator drew, the generator's own trace step by step, and the <b>floor</b>: the best any solver could do knowing the generator and the depth. Some tasks are ambiguous even then: more than one rule fits the demonstrations, and they disagree on the test.`,
+  ];
+  body.replaceChildren(...ps.map(t => { const p = h("p"); p.innerHTML = t; return p; }));
+}
+
+// ------------------------------------------------------------------------------------------------ score panel
+function renderRecord() {
+  const S = SETS[ui.set], tasks = state.data.tasks;
+  const rec = t => Store.get(ui.set, t.id);
+  const done = tasks.filter(t => finished(rec(t)));
+  const prog = tasks.filter(t => status(rec(t)) === "prog").length;
+  const n = done.length;
+  const row = (label, k, whole, you) => h("tr", { class: you ? "you" : "" }, h("td", { text: label }),
+    h("td", { class: "n" }, !n ? "–" : k == null ? "— " : `${Number.isInteger(k) ? k : k.toFixed(2)}/${n} `, h("span", { class: "whole", text: k == null ? "" : pctP(k / n) })),
+    h("td", { class: "n" }, h("span", { class: "whole", text: whole === undefined ? "" : whole == null ? "all —" : `all ${pctP(whole)}` })));
+  const count = f => done.filter(f).length;
+  // the floor's expected number right over some tasks, or null while any of them lacks the value
+  const expRight = (ts, key) => ts.some(t => t.floor[key] == null) ? null : ts.reduce((s, t) => s + 1 - t.floor[key], 0);
+  const tbl = h("table", { class: "rec" });
+  tbl.append(
+    row("You, first try", count(t => within(rec(t), 1)), undefined, true),
+    row(`You, within ${ATT} tries`, count(t => within(rec(t), ATT)), undefined, true));
+  if (S.kind === "pre") {
+    const r1 = n ? expRight(done, "err@1") : 0, r2 = n ? expRight(done, "err@2") : 0;
+    const w1 = expRight(tasks, "err@1"), w2 = expRight(tasks, "err@2");
+    const r = x => x == null ? null : Math.abs(x - Math.round(x)) < 1e-9 ? Math.round(x) : x;
+    tbl.append(
+      row("Floor, first try", r(r1), w1 == null ? null : w1 / tasks.length),
+      row(`Floor, within ${ATT} tries`, r(r2), w2 == null ? null : w2 / tasks.length));
+  }
+  const note = !n ? (S.kind === "pre"
+      ? "Finish a task (solve it, run out of tries, or give up) to start a score. The floor is the best any solver could do knowing the generator and the depth; its rows count the tasks it would be expected to get right."
+      : "Finish a task (solve it, run out of tries, or give up) to start a score.")
+    : `Over the ${plural(n, "task")} you finished${prog ? ` (${prog} more in progress)` : ""}${S.kind === "pre" ? "; the floor's expected count on the same tasks, and on the whole set at right" : ""}.`;
+  el("record").replaceChildren(tbl, h("div", { class: "small muted", style: "margin-top:6px", text: note }));
+}
+
+// ------------------------------------------------------------------------------------------------ list
+const sameSize = t => t.train.every(p => p.i.length === p.o.length && p.i[0].length === p.o[0].length);
+function buildExtraFilter() {
+  const S = SETS[ui.set], f = el("f-extra");
+  const opts = S.kind === "pre"
+    ? [["all", "Any task"], ["unamb", "Unambiguous for the floor"], ["amb", "Ambiguous for the floor"]]
+    : [["all", "Any task"], ["same", "Output same size as input"], ["resize", "Output changes size"]];
+  f.replaceChildren(...opts.map(([v, l]) => h("option", { value: v, text: l })));
+  if (!opts.some(o => o[0] === ui.fx)) ui.fx = "all";
+  f.value = ui.fx; el("f-status").value = ui.fs;
+}
+function passes(t) {
+  const st = status(Store.get(ui.set, t.id));
+  if (ui.fs === "untried" && st !== "untried") return false;
+  if (ui.fs === "prog" && st !== "prog") return false;
+  if (ui.fs === "done" && !["ok1", "ok", "miss", "gave"].includes(st)) return false;
+  if (ui.fs === "right" && !["ok1", "ok"].includes(st)) return false;
+  if (ui.fs === "wrong" && !["miss", "gave"].includes(st)) return false;
+  switch (ui.fx) {
+    case "amb": return t.floor.n_outputs > 1;
+    case "unamb": return t.floor.n_outputs === 1;
+    case "same": return sameSize(t);
+    case "resize": return !sameSize(t);
+  }
+  return true;
+}
+function renderList() {
+  const tasks = state.data.tasks.filter(passes), list = el("list"), S = SETS[ui.set];
+  el("list-count").textContent = `${tasks.length} of ${state.data.tasks.length} tasks`;
+  list.replaceChildren(...tasks.map(t => {
+    const st = status(Store.get(ui.set, t.id)), g = t.test[0].i;
+    return h("li", {}, h("button", { type: "button", "data-id": t.id, "aria-current": String(!!state.task && state.task.id === t.id), onclick: () => openTask(t) },
+      h("i", { class: `pip ${st === "untried" ? "" : st}`, title: PIPNAME[st], "aria-label": PIPNAME[st] }),
+      h("span", { class: "tid", text: S.kind === "pre" ? `#${t.id}` : t.id }),
+      h("span", { class: "meta", text: S.kind === "arc" ? `${t.train.length} demos · ${g.length}×${g[0].length}` : "" })));
+  }));
+  scrollList();
+}
+function scrollList() {                    // keep the current row in view by scrolling the list itself, never the page
+  const L = el("list"), b = L.querySelector('[aria-current="true"]'); if (!b) return;
+  const li = b.parentElement, top = li.offsetTop, bot = top + li.offsetHeight;
+  if (top < L.scrollTop) L.scrollTop = top; else if (bot > L.scrollTop + L.clientHeight) L.scrollTop = bot - L.clientHeight;
+}
+el("f-status").addEventListener("change", e => { ui.fs = e.target.value; saveUI(); renderList(); });
+el("f-extra").addEventListener("change", e => { ui.fx = e.target.value; saveUI(); renderList(); });
+el("random").addEventListener("click", () => {
+  if (!state.data) return;
+  const untried = state.data.tasks.filter(t => status(Store.get(ui.set, t.id)) === "untried");
+  const pool = untried.filter(passes).length ? untried.filter(passes) : untried;
+  if (pool.length) openTask(pool[Math.floor(Math.random() * pool.length)]);
+});
+
+// ------------------------------------------------------------------------------------------------ task view
+const hashFor = (set, id) => `#${set}/${id}`;
+function openTask(t) {
+  timerLeave();
+  state.task = t; state.testIx = 0; state.giveUpArmed = false; state.fb = {};
+  ui.ids[ui.set] = t.id; saveUI();
+  timerOpen(Store.key(ui.set, t.id));
+  try { history.replaceState(null, "", hashFor(ui.set, t.id)); } catch {}
+  for (const b of el("list").querySelectorAll("button[data-id]")) b.setAttribute("aria-current", String(b.dataset.id === t.id));
+  scrollList();
+  renderTask();
+}
+function renderTask() {
+  const t = state.task, n = t.train.length;
+  // two pairs a row, or every pair in one row when the largest grid keeps cells of 12 px or more
+  let dm = Math.max(72, Math.min(170, Math.floor((mainW() - 80) / 2)));
+  const big = Math.max(...t.train.map(p => Math.max(p.i.length, p.i[0].length, p.o.length, p.o[0].length)));
+  const one = Math.floor((mainW() - 14 * (n - 1) - 100 * n) / (2 * n));
+  if (one < dm && Math.floor(one / big) >= 12) dm = one;
+  const demos = h("section", {}, h("div", { class: "section-h" }, h("h3", { text: "Demonstrations" })),
+    h("div", { class: "pairs" }, ...t.train.map((p, i) => h("div", { class: "pair" },
+      h("span", { class: "idx", text: `demo ${i + 1}` }), gridEl(p.i, dm), h("span", { class: "arrow", text: "→" }), gridEl(p.o, dm)))));
+  el("main").replaceChildren(renderHead(), demos, renderTest(), renderNotes(), renderReveal());
+  lastW = mainW();
+}
+function copyLink(btn) {
+  const done = txt => { btn.textContent = txt; setTimeout(() => { if (btn.isConnected) btn.textContent = "Copy link"; }, 1600); };
+  try { navigator.clipboard.writeText(location.href).then(() => done("Copied"), () => done("Link is in the address bar")); }
+  catch { done("Link is in the address bar"); }
+}
+function renderHead() {
+  const t = state.task, S = SETS[ui.set], st = status(Store.get(ui.set, t.id)), ix = state.data.tasks.indexOf(t);
+  const link = h("button", { type: "button", class: "btn", title: "Copy a link that opens this task" }, "Copy link");
+  link.addEventListener("click", () => copyLink(link));
+  return h("div", { class: "thead", id: "thead" },
+    h("h2", { text: S.kind === "pre" ? t.task_id : t.id }),
+    h("span", { class: "tag", text: S.kind === "arc" ? `${S.label.split(" · ")[1]} · ${plural(t.train.length, "demo")} · ${plural(t.test.length, "test")}` : S.label }),
+    st === "untried" ? null : h("span", { class: `tag ${st === "ok1" || st === "ok" ? "ok" : st === "gave" || st === "miss" ? "bad" : ""}`, text: PIPNAME[st] }),
+    h("span", { class: "spacer" }),
+    h("span", { class: "timer", id: "timer", title: "Time on this task while the page is visible", text: "0:00" }),
+    link,
+    h("button", { type: "button", class: "btn", disabled: ix <= 0, title: "Previous task (←)", onclick: () => openTask(state.data.tasks[ix - 1]) }, "← Prev"),
+    h("button", { type: "button", class: "btn", disabled: ix >= state.data.tasks.length - 1, title: "Next task (→)", onclick: () => openTask(state.data.tasks[ix + 1]) }, "Next →"));
+}
+function refreshTask() {                    // after a try or a give-up: head, tabs, feedback, reveal
+  const hd = el("thead"); if (hd) hd.replaceWith(renderHead());
+  syncTabs(); showFeedback();
+  const rv = el("reveal-sec"); if (rv) rv.replaceWith(renderReveal());
+}
+
+// ---- the test and the answer editor
+const draftKey = j => `${ui.set}/${state.task.id}/${j}`;
+function draft(j = state.testIx) {
+  const k = draftKey(j);
+  if (!state.drafts[k]) state.drafts[k] = clone(state.task.test[j].i);
+  return state.drafts[k];
+}
+function renderTest() {
+  const t = state.task, S = SETS[ui.set], j = state.testIx, g = draft(j);
+  const sec = h("section", { id: "test-sec" });
+  const tabs = t.test.length > 1 ? h("div", { class: "test-tabs", id: "test-tabs" }, ...t.test.map((_, k) =>
+    h("button", { type: "button", class: "btn", "data-k": String(k), onclick: () => { state.testIx = k; el("test-sec").replaceWith(renderTest()); } }))) : null;
+  sec.append(h("div", { class: "section-h" }, h("h3", { text: "Test" }), tabs));
+  const inp = gridEl(t.test[j].i, Math.min(300, mainW() - 40), `input ${t.test[j].i.length}×${t.test[j].i[0].length}`);
+  const cv = h("canvas", { class: "grid editor-canvas", id: "ed", tabindex: "0", "aria-label": "Your answer. Click or drag to paint; keys 0 to 9 pick the colour." });
+  const hover = h("div", { class: "hover", id: "hover" });
+  const palette = h("div", { class: "palette", role: "group", "aria-label": "Colour" }, ...PAL.map((c, k) =>
+    h("button", { type: "button", class: "sw", "data-k": String(k), style: `background:${c}`, title: `${CNAME[k]} (${k})`, "aria-label": `${CNAME[k]}, key ${k}`,
+      onclick: () => { ui.color = k; saveUI(); syncTools(); } }, h("span", { text: String(k) }))));
+  const toolSeg = h("div", { class: "seg", id: "toolseg" },
+    h("button", { type: "button", "data-tool": "paint", title: "Paint cells (P). Alt-click a cell to pick its colour.", onclick: () => { ui.tool = "paint"; saveUI(); syncTools(); } }, "Paint"),
+    h("button", { type: "button", "data-tool": "fill", title: "Flood-fill a same-colour region (F)", onclick: () => { ui.tool = "fill"; saveUI(); syncTools(); } }, "Fill"));
+  const sizeBox = S.kind === "arc" ? h("span", { class: "sizebox" },
+    h("input", { id: "rows", type: "number", min: "1", max: "30", value: String(g.length), "aria-label": "Rows" }), "×",
+    h("input", { id: "cols", type: "number", min: "1", max: "30", value: String(g[0].length), "aria-label": "Columns" }),
+    h("button", { type: "button", class: "btn", title: "Resize, keeping the top-left content", onclick: resizeDraft }, "Set size")) : null;
+  const tools = h("div", { class: "tools" }, toolSeg,
+    h("button", { type: "button", class: "btn", title: "Undo (Z)", onclick: undo }, "Undo ", h("kbd", { text: "Z" })),
+    h("button", { type: "button", class: "btn", title: "Start again from a copy of the test input (C)", onclick: () => setDraft(clone(t.test[j].i)) }, "Copy input ", h("kbd", { text: "C" })),
+    h("button", { type: "button", class: "btn", title: "Paint the whole grid black", onclick: () => setDraft(draft().map(r => r.map(() => 0))) }, "Clear"),
+    sizeBox);
+  const submit = h("div", { class: "submitrow" },
+    h("button", { type: "button", class: "btn primary", id: "submit", onclick: submitAnswer }, "Check answer ", h("kbd", { text: "↵" })),
+    h("div", { class: "feedback", id: "feedback", "aria-live": "polite" }));
+  sec.append(h("div", { class: "workrow" }, inp, h("div", { class: "editor-col" }, cv, hover, palette, tools, submit)));
+  sec.append(h("div", { class: "keys", text: "Keys: 0–9 colour · P paint · F fill · Alt-click pick colour · Z undo · C copy input · Enter check · ← → tasks" }));
+  wireEditor(cv);
+  queueMicrotask(() => { paintEditor(); syncTools(); syncTabs(); showFeedback(); });
+  return sec;
+}
+function syncTabs() {
+  const tabs = el("test-tabs"); if (!tabs) return;
+  const rec = Store.get(ui.set, state.task.id);
+  for (const b of tabs.children) {
+    const k = +b.dataset.k, tr = rec && rec.tests[k];
+    b.textContent = `Test ${k + 1}${tr && tr.ok ? " ✓" : tr && tr.tries >= ATT ? " ✗" : ""}`;
+    b.setAttribute("aria-pressed", String(k === state.testIx));
+    b.style.borderColor = k === state.testIx ? "var(--accent)" : "";
+  }
+}
+function syncTools() {
+  for (const b of document.querySelectorAll(".palette .sw")) b.setAttribute("aria-pressed", String(+b.dataset.k === ui.color));
+  for (const b of document.querySelectorAll("#toolseg button")) b.setAttribute("aria-pressed", String(b.dataset.tool === ui.tool));
+}
+const edCell = () => cellFor(draft(), Math.min(380, mainW() - 24), 34, 6);
+function sizeNote() { const g = draft(), hv = el("hover"); if (hv) hv.textContent = `your answer ${g.length}×${g[0].length}`; }
+function paintEditor() { const cv = el("ed"); if (!cv) return; drawGrid(cv, draft(), edCell()); if (!el("hover").dataset.live) sizeNote(); }
+function pushUndo() { const k = draftKey(state.testIx), u = (state.undo[k] = state.undo[k] || []); u.push(clone(draft())); if (u.length > 200) u.shift(); }
+function undo() { const k = draftKey(state.testIx), u = state.undo[k]; if (u && u.length) { state.drafts[k] = u.pop(); paintEditor(); syncSize(); } }
+function setDraft(g) { pushUndo(); state.drafts[draftKey(state.testIx)] = g; paintEditor(); syncSize(); }
+function syncSize() { const g = draft(); if (el("rows")) { el("rows").value = g.length; el("cols").value = g[0].length; } }
+function resizeDraft() {
+  const R = Math.max(1, Math.min(30, Math.round(+el("rows").value) || 1)), C = Math.max(1, Math.min(30, Math.round(+el("cols").value) || 1)), g = draft();
+  setDraft(Array.from({ length: R }, (_, r) => Array.from({ length: C }, (_, c) => (g[r] && g[r][c] != null ? g[r][c] : 0))));
+}
+function flood(g, r0, c0, col) {
+  const from = g[r0][c0]; if (from === col) return;
+  const st = [[r0, c0]];
+  while (st.length) {
+    const [r, c] = st.pop();
+    if (r < 0 || c < 0 || r >= g.length || c >= g[0].length || g[r][c] !== from) continue;
+    g[r][c] = col; st.push([r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]);
+  }
+}
+function wireEditor(cv) {
+  let painting = false;
+  const at = e => {
+    const g = draft(), rect = cv.getBoundingClientRect();
+    const c = Math.floor((e.clientX - rect.left) / (rect.width / g[0].length)), r = Math.floor((e.clientY - rect.top) / (rect.height / g.length));
+    return r >= 0 && c >= 0 && r < g.length && c < g[0].length ? [r, c] : null;
+  };
+  cv.addEventListener("pointerdown", e => {
+    const p = at(e); if (!p) return;
+    e.preventDefault(); cv.focus({ preventScroll: true });
+    const g = draft();
+    if (e.altKey) { ui.color = g[p[0]][p[1]]; saveUI(); syncTools(); return; }
+    pushUndo();
+    if (ui.tool === "fill") { flood(g, p[0], p[1], ui.color); paintEditor(); return; }
+    painting = true; try { cv.setPointerCapture(e.pointerId); } catch {}
+    g[p[0]][p[1]] = ui.color; paintEditor();
+  });
+  cv.addEventListener("pointermove", e => {
+    const p = at(e), hv = el("hover");
+    if (hv && p) { hv.dataset.live = "1"; hv.textContent = `row ${p[0]}, col ${p[1]} · ${CNAME[draft()[p[0]][p[1]]]}`; }
+    if (!painting || !p) return;
+    const g = draft(); if (g[p[0]][p[1]] !== ui.color) { g[p[0]][p[1]] = ui.color; paintEditor(); }
+  });
+  const stop = () => { painting = false; };
+  cv.addEventListener("pointerup", stop); cv.addEventListener("pointercancel", stop);
+  cv.addEventListener("pointerleave", () => { const hv = el("hover"); if (hv) { delete hv.dataset.live; sizeNote(); } });
+}
+
+// ---- checking
+function showFeedback() {
+  const fb = el("feedback"); if (!fb) return;
+  const m = state.fb[state.testIx];
+  if (m) { fb.className = `feedback ${m[1]}`; fb.textContent = m[0]; return; }
+  const rec = Store.get(ui.set, state.task.id), tr = rec && rec.tests[state.testIx];
+  if (!tr || !tr.tries) { fb.className = "feedback"; fb.textContent = rec && rec.revealed ? "Answer revealed." : ""; return; }
+  if (tr.ok) { fb.className = "feedback ok"; fb.textContent = `Right, on try ${tr.ok_at}.`; return; }
+  fb.className = "feedback bad";
+  fb.textContent = tr.tries >= ATT ? `Wrong on ${ATT === 2 ? "both" : `all ${ATT}`} tries.`
+    : `${plural(tr.tries, "wrong try", "wrong tries")}${rec.revealed ? "; answer revealed" : `, ${ATT - tr.tries} left`}.`;
+}
+function submitAnswer() {
+  const t = state.task, j = state.testIx, g = draft(j), ok = same(g, t.test[j].o);
+  let rec = Store.get(ui.set, t.id);
+  if (rec && (finished(rec) || testDone(rec.tests[j]))) {          // after the fact: shown, not counted
+    state.fb[j] = [`${ok ? "Matches" : "Doesn't match"} the answer (not counted: this test is already finished).`, ok ? "ok" : "bad"];
+    showFeedback(); return;
+  }
+  rec = Store.ensure(ui.set, t, total());
+  const tr = rec.tests[j];
+  tr.tries += 1; tr.subs = (tr.subs || []).concat([gstr(g)]).slice(-ATT);
+  if (ok) { tr.ok = true; tr.ok_at = tr.tries; }
+  rec.seconds = Math.round(total());
+  Store.put(rec);
+  const others = t.test.length > 1 && !rec.tests.every(testDone);
+  state.fb[j] = ok ? [`Right, on try ${tr.ok_at}.${others ? " Now the other test." : ""}`, "ok"]
+    : tr.tries < ATT ? [`Not right. ${plural(ATT - tr.tries, "try", "tries")} left.`, "bad"]
+    : [`Not right, and that was your last try.${others ? " On to the other test." : " The answer is below."}`, "bad"];
+  renderList(); renderRecord(); refreshTask();
+}
+
+// ---- notes
+function renderNotes() {
+  const rec = Store.get(ui.set, state.task.id);
+  const ta = h("textarea", { id: "notes", placeholder: "What do you think the rule is? Kept with your attempts in this browser, and in the download." });
+  ta.value = rec ? rec.notes || "" : "";
+  let tm = null;
+  const task = state.task;
+  const save = () => {
+    clearTimeout(tm);
+    if (state.task !== task) return;
+    const v = ta.value; let r = Store.get(ui.set, task.id);
+    if (!r && !v) return;
+    if (r && (r.notes || "") === v) return;
+    r = Store.ensure(ui.set, task, total());
+    r.notes = v; if (!finished(r)) r.seconds = Math.round(total());
+    Store.put(r);
+  };
+  ta.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(save, 900); });
+  ta.addEventListener("blur", save);
+  return h("section", {}, h("div", { class: "section-h" }, h("h3", { text: "Your read of the rule" })), ta);
+}
+
+// ---- reveal
+function renderReveal() {
+  const t = state.task, rec = Store.get(ui.set, t.id), S = SETS[ui.set];
+  const sec = h("section", { id: "reveal-sec" }, h("div", { class: "section-h" }, h("h3", { text: S.kind === "pre" ? "The answer, the rule and the floor" : "The answer" })));
+  if (!finished(rec)) {
+    const what = S.kind === "pre" ? "the answer, the rule the generator drew, and the floor"
+      : ui.set === "arc1-training" ? "the answer and a hand-written solver" : "the answer";
+    const note = h("span", { class: "muted small", text: `Hidden until you get it right, run out of tries, or give up: ${what}.` });
+    const btn = h("button", { type: "button", class: "btn", id: "giveup" }, "Show the answer");
+    btn.addEventListener("click", () => {
+      if (!state.giveUpArmed) {
+        state.giveUpArmed = true; btn.textContent = "Reveal and count as given up"; btn.classList.add("primary");
+        note.textContent = "Click again to confirm. Tests you haven't got right yet count as wrong."; return;
+      }
+      const r = Store.ensure(ui.set, t, total());
+      r.revealed = true; r.gave_up = !r.tests.every(x => x.ok); r.seconds = Math.round(total());
+      Store.put(r); state.fb = {};
+      renderList(); renderRecord(); refreshTask();
+    });
+    sec.append(h("div", { class: "submitrow" }, btn, note));
+    return sec;
+  }
+  const body = h("div", { class: "reveal-body" });
+  const ans = h("div", { class: "pairs" });
+  t.test.forEach((p, k) => {
+    const tr = rec.tests[k], last = tr.subs && tr.subs.length ? parse(tr.subs[tr.subs.length - 1]) : null;
+    const kids = [gridEl(p.o, 220, `answer${t.test.length > 1 ? ` ${k + 1}` : ""} · ${p.o.length}×${p.o[0].length}`)];
+    if (last && !same(last, p.o)) {
+      const diff = new Set(), W = last[0].length;
+      if (last.length === p.o.length && W === p.o[0].length) last.forEach((r, i) => r.forEach((v, c) => { if (v !== p.o[i][c]) diff.add(i * W + c); }));
+      kids.push(gridEl(last, 220, diff.size ? `your last try · ${plural(diff.size, "cell")} off, outlined` : "your last try · wrong size", { mark: diff, markColor: cssVar("--bad") }));
+    }
+    ans.append(h("div", { class: "pair" }, ...kids));
+  });
+  const top = h("div", { class: "reveal-top" }, ans);
+  body.append(top);
+  if (S.kind === "pre") preFacts(body, top, t); else arcFacts(body, t);
+  sec.append(body);
+  return sec;
+}
+function preFacts(body, top, t) {
+  const S = SETS[ui.set], f = t.floor, all = state.data.tasks, d = S.depth;
+  const rule = h("ol", { class: "rule" }, ...t.rule.map(s => h("li", {}, `${s.sel[0].toUpperCase()}${s.sel.slice(1)}: ${s.op}.`,
+    s.held ? h("span", { class: "tag held", style: "margin-left:6px", title: "One of the 50 steps the pretraining corpus never contains", text: "held-out step" }) : null,
+    h("code", { text: s.code }))));
+  const right = k => f[k] == null ? null : 1 - f[k];
+  const tries = h("table", { class: "floor-tbl" },
+    h("tr", {}, h("td", { text: "Right first try" }), h("td", { class: "n", text: pctP(right("err@1")) })),
+    h("tr", {}, h("td", { text: `Right within ${ATT} tries` }), h("td", { class: "n", text: pctP(right("err@2")) })));
+  const onTest = d > 1 ? "on the test input at every step" : "on the test input";
+  const floorP = f.n_outputs === 1
+    ? [h("p", { class: "verdict ok", text: "Unambiguous." }),
+       h("p", { text: `Every ${d}-step rule that fits the three demonstrations (and acts ${onTest}) gives this same test output, so the best possible solver gets it right:` }),
+       tries]
+    : [h("p", { class: "verdict warn", text: `Ambiguous: ${f.n_outputs} possible outputs.` }),
+       h("p", { text: `The ${d}-step rules that fit the three demonstrations (and act ${onTest}) give ${f.n_outputs} different test outputs. Weighing each rule by how likely the generator is to draw it, the best possible solver is right this often:` }),
+       tries,
+       h("p", { text: `Its first guess, the most probable output, ${f.map_is_true ? "is" : "is not"} the true answer here.` })];
+  const w1 = all.reduce((s, x) => s + 1 - x.floor["err@1"], 0) / all.length;
+  top.append(h("div", { class: "facts" },
+    h("div", { class: "fact" }, h("h4", { text: "The rule the generator drew" }), rule,
+      t.held_position != null ? h("p", { class: "muted small", style: "margin-top:8px", text: `Step ${t.held_position + 1} is a held-out step: one of the 50 steps the pretraining corpus never contains.` }) : null),
+    h("div", { class: "fact" }, h("h4", { text: "The floor" }), ...floorP,
+      h("p", { class: "muted small", text: `The floor is the best any solver could do knowing the generator and that the rule has ${plural(d, "step")}; it doesn't know which steps are held out. On this whole set it is right first try on ${pctP(w1)} of tasks.` }))));
+  // the generator's own trace, step by step, on any grid of the task
+  const names = t.train.map((_, i) => `Demo ${i + 1}`).concat(["Test"]);
+  let k = names.length - 1;
+  const tabs = h("div", { class: "test-tabs" }), row = h("div", { class: "trace" });
+  const draw = () => {
+    [...tabs.children].forEach((b, i) => { b.setAttribute("aria-pressed", String(i === k)); b.style.borderColor = i === k ? "var(--accent)" : ""; });
+    let prev = k < t.train.length ? t.train[k].i : t.test[0].i;
+    const kids = [];
+    t.trace[k].forEach((s, i) => {
+      kids.push(gridEl(prev, 150, i === 0 ? `input · dashed: step 1 picks` : `after step ${i} · dashed: step ${i + 1} picks`, { mark: new Set(s.sel), dash: true, maxCell: 18 }));
+      kids.push(h("span", { class: "arrow", text: "→" }));
+      prev = parse(s.g);
+    });
+    kids.push(gridEl(prev, 150, "output", { maxCell: 18 }));
+    row.replaceChildren(...kids);
+  };
+  names.forEach((n, i) => tabs.append(h("button", { type: "button", class: "btn", onclick: () => { k = i; draw(); } }, n)));
+  draw();
+  body.append(h("div", {}, h("div", { class: "section-h" }, h("h3", { text: "The rule, step by step" }), tabs), row));
+}
+function arcFacts(body, t) {
+  if (t.solver) {
+    const credit = h("span", { class: "muted small" }, "hand-written in his DSL · ",
+      h("a", { href: "https://github.com/michaelhodel/arc-dsl", text: "Michael Hodel's arc-dsl" }), ", MIT");
+    body.append(h("div", {}, h("div", { class: "section-h" }, h("h3", { text: "Hodel's solver" }), credit),
+      h("pre", { class: "code" }, h("code", { text: t.solver }))));
+  } else if (ui.set === "arc1-evaluation") {
+    body.append(h("p", { class: "muted small", style: "margin:0", text: "Hand-written solvers (Michael Hodel's arc-dsl) cover the training tasks only." }));
+  }
+}
+
+// ------------------------------------------------------------------------------------------------ keys, resize, links, boot
+document.addEventListener("keydown", e => {
+  if (!state.task || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest && e.target.closest("textarea, input, select")) return;
+  const k = e.key;
+  if (/^[0-9]$/.test(k)) { ui.color = +k; saveUI(); syncTools(); return; }
+  if (k === "p" || k === "P") { ui.tool = "paint"; saveUI(); syncTools(); return; }
+  if (k === "f" || k === "F") { ui.tool = "fill"; saveUI(); syncTools(); return; }
+  if (k === "z" || k === "Z") { e.preventDefault(); undo(); return; }
+  if (k === "c" || k === "C") { setDraft(clone(state.task.test[state.testIx].i)); return; }
+  if (k === "Enter" && !(e.target.closest && e.target.closest("button"))) { e.preventDefault(); submitAnswer(); return; }
+  const ix = state.data.tasks.indexOf(state.task);
+  if (k === "ArrowRight" && ix < state.data.tasks.length - 1) { e.preventDefault(); openTask(state.data.tasks[ix + 1]); }
+  if (k === "ArrowLeft" && ix > 0) { e.preventDefault(); openTask(state.data.tasks[ix - 1]); }
+});
+let lastW = 0, rz = null;
+window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (state.task && Math.abs(mainW() - lastW) > 30) renderTask(); }, 200); });
+window.addEventListener("pagehide", () => { timerLeave(); lsSet(LS_KEY, Store.recs); });
+
+// Links: #<set>/<task>, e.g. #held_out-d3/0042 or #arc1-training/007bbfc7; #<set> alone opens the set; a benchmark task
+// id (#held_out-d3-0042) works too.
+function fromHash() {
+  let s = (location.hash || "").slice(1);
+  try { s = decodeURIComponent(s); } catch {}
+  if (!s) return null;
+  const slash = s.indexOf("/");
+  if (slash >= 0) { const set = s.slice(0, slash); return SETS[set] ? [set, s.slice(slash + 1) || null] : null; }
+  if (SETS[s]) return [s, null];
+  for (const set of Object.keys(SETS)) if (s.startsWith(set + "-")) return [set, s.slice(set.length + 1)];
+  return null;
+}
+function applySet(set) {
+  const S = SETS[set];
+  if (S.kind === "pre") { ui.src = "pre"; ui.split = S.split; ui.depth = S.depth; } else ui.src = set;
+}
+window.addEventListener("hashchange", () => {
+  const f = fromHash();
+  if (!f) return;
+  if (f[0] !== ui.set || !state.data) { applySet(f[0]); openSet(f[1]); return; }
+  const t = f[1] && state.data.tasks.find(x => x.id === f[1]);
+  if (t && t !== state.task) openTask(t);
+});
+setSave(true);
+(() => {
+  const f = fromHash();
+  if (f) { applySet(f[0]); openSet(f[1]); return; }
+  applySet(SETS[ui.set] ? ui.set : DEFAULT_SET); openSet();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# written by scripts/build_site.py
+site/data/
+.cache/
+
+# written by scripts/export_benchmark.py (its default --cache)
+floors_cache.json
+floors_cache.json.tmp
+
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# the README's screenshots are tracked
+!assets/*.png
