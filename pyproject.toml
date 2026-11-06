@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pretrain-arc"
+name = "pre-arc"
 version = "0.1.0"
 description = "ARC-style tasks from a known rule grammar: an unbounded pretraining corpus, a fixed benchmark with held-out steps, and exact Bayes floors"
 readme = "README.md"
@@ -15,8 +15,8 @@ dependencies = ["numpy>=1.21"]
 test = ["pytest"]
 
 [project.urls]
-Homepage = "https://github.com/jagilley/pretrain-arc"
-Viewer = "https://jagilley.github.io/pretrain-arc/"
+Homepage = "https://github.com/jagilley/pre-arc"
+Viewer = "https://jagilley.github.io/pre-arc/"
 
 [tool.setuptools]
-packages = ["pretrain_arc"]
+packages = ["pre_arc"]

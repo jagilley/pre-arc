@@ -1,11 +1,11 @@
-# pretrain-ARC
+# pre-ARC
 
 A large dataset of ARC-like tasks drawn from a deterministic rule generator.
 
 We provide a pretraining corpus which is effectively unlimited in size, a fixed test set of 2,560 tasks that measures what
 transfers out of pretraining, and, for every test task, the exact expected score of the best possible solver.
 
-**[Open the viewer](https://jagilley.github.io/pretrain-arc/)** to solve the tasks yourself, see each one's rule
+**[Open the viewer](https://jagilley.github.io/pre-arc/)** to solve the tasks yourself, see each one's rule
 step by step, and compare them with ARC-AGI-1.
 
 ![A held-out-step task after the reveal: the rule in words, and the generator's trace on every input](assets/reveal.png)
@@ -19,7 +19,7 @@ evaluation set. The corpus is then the variable that matters most, and it is the
 its own, and how its contents relate to the test is unknown, so a score mixes up what the learner can do with what
 its corpus happened to contain.
 
-pretrain-ARC is that setup with the corpus made known. The corpus and the benchmark come from one generator whose
+pre-ARC is that setup with the corpus made known. The corpus and the benchmark come from one generator whose
 grammar is written down, so the relationship between them is exact:
 
 - The **in-distribution** split is drawn from exactly the corpus's distribution, on grids the corpus never emits. It
@@ -69,13 +69,13 @@ A **rule** is 1 to 4 **steps** applied in order, and a step is a selector paired
 That makes 13 × 20 = 260 pairs, less the 9 that recolour an object to its own colour: **251 steps**. Objects are
 recomputed after every step, so a step can merge or split them for the next one. A task's rule is drawn on the task's
 own grids, uniformly among the steps that act on every one of them (select something and change it), so every step
-of every task is visible in every pair. That is also what makes the floor exact. [`generator.py`](pretrain_arc/generator.py)
+of every task is visible in every pair. That is also what makes the floor exact. [`generator.py`](pre_arc/generator.py)
 has the details; the code is short and numpy-only.
 
 ## The floor
 
 The floor is computed exactly. The rule draw above fixes a rule's prior probability: the product, over its steps, of
-one over the number of steps that were admissible at that position. [`floors.py`](pretrain_arc/floors.py) searches
+one over the number of steps that were admissible at that position. [`floors.py`](pre_arc/floors.py) searches
 every rule of the task's depth over the joint state of the four grids, merging rules that leave all four grids
 identical, since those share every continuation, and keeping the ones that reproduce the three demonstrations. One
 prune makes depth 4 tractable and loses nothing: at the last step a state is expanded only if each demonstration grid
@@ -109,11 +109,11 @@ For scale, ARC-AGI-1's 400 training tasks hold about 1,300 demonstration pairs.
 
 ```bash
 pip install -e .        # editable: the benchmark files live beside the package, in benchmark/
-python -m pretrain_arc corpus --out corpus/ --shards 0-99 --per-depth 256   # 102,400 tasks, JSONL, ARC's format
+python -m pre_arc corpus --out corpus/ --shards 0-99 --per-depth 256   # 102,400 tasks, JSONL, ARC's format
 ```
 
 ```python
-from pretrain_arc import corpus, generator
+from pre_arc import corpus, generator
 
 t = corpus.corpus_task(seed=0, shard=0, depth=2, i=0)      # dict of numpy arrays: demo_in (3, 8, 8), demo_out, test_in, test_out
 print(generator.rule_code(t["rule"]))                        # recolour/1(smallest) ; move/N(smallest)
@@ -140,7 +140,7 @@ against the fingerprint `5d9f992ce03cdced`).
 Score a submission (Kaggle's `{task id: [{"attempt_1": grid, "attempt_2": grid}]}`) with
 
 ```bash
-python -m pretrain_arc score submission.json
+python -m pre_arc score submission.json
 ```
 
 which reports pass@1, pass@2 (the ARC Prize's measure) and pass@4 by split and depth, next to `bayes@k`, the best
@@ -169,11 +169,11 @@ on, a single step almost never explains a task. `identity` answers the test inpu
 grid it acts on, so it only scores when two steps happen to undo each other (move up, then move down). A third
 baseline, `colour_map`, learns one colour substitution from the demonstrations and scores exactly what `identity`
 does: every colour is on at least two objects and a step changes one of them, so no substitution ever fits.
-`python -m pretrain_arc baselines` reproduces all three.
+`python -m pre_arc baselines` reproduces all three.
 
 ## The viewer
 
-[jagilley.github.io/pretrain-arc](https://jagilley.github.io/pretrain-arc/) serves every benchmark task and all 800
+[jagilley.github.io/pre-arc](https://jagilley.github.io/pre-arc/) serves every benchmark task and all 800
 ARC-AGI-1 tasks in one workbench. You paint an answer, get two tries, and then see the rule, the generator's trace on
 every input, and the floor. Your attempts stay in your browser, and you can download them. Every task has its own
 link.
@@ -186,16 +186,16 @@ link.
 pip install -e ".[test]" && pytest -q        # the package rebuilds the benchmark exactly; under a minute
 python scripts/export_benchmark.py           # rebuild benchmark/, floors included (4-7 CPU-hours, resumable)
 python scripts/build_site.py                 # the viewer's data, into site/data/
-python -m pretrain_arc show held_out-d2-0007 # one task in the terminal
+python -m pre_arc show held_out-d2-0007      # one task in the terminal
 ```
 
 | path | what it is |
 |---|---|
-| `pretrain_arc/generator.py` | grids, objects, steps, rules, and the rule draw |
-| `pretrain_arc/floors.py` | the exact Bayes floor |
-| `pretrain_arc/benchmark.py` | the held-out steps, the benchmark and its files |
-| `pretrain_arc/corpus.py` | the corpus |
-| `pretrain_arc/score.py` | scoring and the baselines |
+| `pre_arc/generator.py` | grids, objects, steps, rules, and the rule draw |
+| `pre_arc/floors.py` | the exact Bayes floor |
+| `pre_arc/benchmark.py` | the held-out steps, the benchmark and its files |
+| `pre_arc/corpus.py` | the corpus |
+| `pre_arc/score.py` | scoring and the baselines |
 | `benchmark/` | the 2,560 tasks, their solutions and metadata |
 | `site/` | the viewer (`scripts/build_site.py` writes its data) |
 

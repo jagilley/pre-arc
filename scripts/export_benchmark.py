@@ -16,8 +16,8 @@ from multiprocessing import Pool
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pretrain_arc import benchmark as B  # noqa: E402
-from pretrain_arc import floors as F  # noqa: E402
+from pre_arc import benchmark as B  # noqa: E402
+from pre_arc import floors as F  # noqa: E402
 
 
 def _floor(key):

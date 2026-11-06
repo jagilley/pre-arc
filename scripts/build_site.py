@@ -5,7 +5,7 @@
 
 Ten sets:
   in_dist-d1 .. in_dist-d4, held_out-d1 .. held_out-d4
-      The pretrain-ARC benchmark, rebuilt from the package (`benchmark.build(0)`, checked against its fingerprint and
+      The pre-ARC benchmark, rebuilt from the package (`benchmark.build(0)`, checked against its fingerprint and
       against the shipped `benchmark/challenges.json` and `solutions.json`). Per task: the pairs, the rule (each step in
       words, its code, whether it is a held-out step), the palette, the generator's own trace on every input (the
       object each step selects and the grid after it), and the Bayes floor from `benchmark/metadata.json`.
@@ -38,8 +38,8 @@ import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-from pretrain_arc import benchmark as B  # noqa: E402
-from pretrain_arc import generator as G  # noqa: E402
+from pre_arc import benchmark as B  # noqa: E402
+from pre_arc import generator as G  # noqa: E402
 
 CACHE = os.path.join(REPO, ".cache")
 OUT = os.path.join(REPO, "site", "data")
@@ -66,13 +66,13 @@ def gstr(g):
 
 
 def fetch(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "pretrain-arc-build-site"})
+    req = urllib.request.Request(url, headers={"User-Agent": "pre-arc-build-site"})
     with urllib.request.urlopen(req, timeout=120) as r:
         return r.read()
 
 
 # ------------------------------------------------------------------------------------------------------------------ #
-# pretrain-ARC
+# pre-ARC
 # ------------------------------------------------------------------------------------------------------------------ #
 
 def pretrain_task(t, meta):
@@ -116,7 +116,7 @@ def build_pretrain():
         for d in sorted(bench[split]):
             out[f"{split}-d{d}"] = {
                 "set": f"{split}-d{d}", "split": split, "depth": d, "fingerprint": fp,
-                "source": "pretrain-ARC benchmark, seed 0 (benchmark/{challenges,solutions,metadata}.json)",
+                "source": "pre-ARC benchmark, seed 0 (benchmark/{challenges,solutions,metadata}.json)",
                 "tasks": [pretrain_task(t, meta["tasks"][t["id"]]) for t in bench[split][d]],
             }
     return out
