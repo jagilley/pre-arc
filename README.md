@@ -1,8 +1,9 @@
 # pretrain-ARC
 
-ARC-style tasks from a rule grammar you can read in full: an unbounded pretraining corpus, a fixed benchmark of
-2,560 tasks that measures what transfers out of it, and, for every benchmark task, the exact expected score of the
-best possible solver.
+A large dataset of ARC-like tasks drawn from a deterministic rule generator.
+
+We provide a pretraining corpus which is effectively unlimited in size, a fixed test set of 2,560 tasks that measures what
+transfers out of pretraining, and, for every test task, the exact expected score of the best possible solver.
 
 **[Open the viewer](https://jagilley.github.io/pretrain-arc/)** to solve the tasks yourself, see each one's rule
 step by step, and compare them with ARC-AGI-1.
@@ -18,7 +19,7 @@ evaluation set. The corpus is then the variable that matters most, and it is the
 its own, and how its contents relate to the test is unknown, so a score mixes up what the learner can do with what
 its corpus happened to contain.
 
-pretrain-ARC is that setup with the unknowns removed. The corpus and the benchmark come from one generator whose
+pretrain-ARC is that setup with the corpus made known. The corpus and the benchmark come from one generator whose
 grammar is written down, so the relationship between them is exact:
 
 - The **in-distribution** split is drawn from exactly the corpus's distribution, on grids the corpus never emits. It
@@ -28,14 +29,25 @@ grammar is written down, so the relationship between them is exact:
   "flip the largest object left-right" and "flip the smallest object upside-down" are in the corpus). It measures
   whether what was learned composes.
 - Both splits come at **depths 1-4**, the number of steps in a rule, so you can see where composition stops.
-- Every benchmark task carries its **Bayes floor**. Three demonstrations sometimes fit several rules that disagree on
-  the test input, so some tasks can't be answered reliably by anyone. The floor is the error that remains for the best
-  possible solver, the one that knows the generator and the rule's depth and answers with the most probable outputs,
-  and no solver can go below it in expectation. A learner's score can then be read against that solver's instead of
-  against 100%.
 
-The world is deliberately narrow: 8×8 grids, objects as connected components, five families of operator. It is a
-place to study how a pretraining corpus transfers, under control, rather than a replacement for ARC.
+A score mixes in one more thing besides the corpus, which is how much the task's own demonstrations left open. Three
+demonstrations often fit several rules that disagree on the test input. Suppose "recolour the smallest object red" and
+"recolour the first object in reading order red" pick the same object in all three demonstrations and different
+objects in the test input. The demonstrations cannot say which rule was meant, and the best anyone can do is bet on
+the more likely one.
+
+Because the generator is written down, "more likely" has an exact value. Each step is drawn uniformly among the steps
+that act on all four grids, so the probability of any rule is a product of simple fractions, and one can list every
+rule that reproduces the three demonstrations, weight each by its probability, and add up the weight behind each
+candidate test output. The best possible solver answers with the output that has the most weight behind it, and its
+expected error is one minus that output's share. That is the task's **Bayes floor**. It ships with every benchmark
+task, at one, two and four attempts, and no solver can go below it in expectation, because the error it describes
+belongs to the task rather than to the solver. A learner's score is then read against that solver's rather than
+against 100%, and what it measures is how much of what the demonstrations determine the learner recovered.
+
+The world is deliberately narrow: 8×8 grids, objects as connected components, five families of operator. Some of that
+narrowness is the price of the floor, which is exact only because every rule the generator can draw can be listed.
+This is a place to study how a pretraining corpus transfers, under control, rather than a replacement for ARC.
 
 ## The world
 
@@ -60,6 +72,23 @@ own grids, uniformly among the steps that act on every one of them (select somet
 of every task is visible in every pair. That is also what makes the floor exact. [`generator.py`](pretrain_arc/generator.py)
 has the details; the code is short and numpy-only.
 
+## The floor
+
+The floor is computed exactly. The rule draw above fixes a rule's prior probability: the product, over its steps, of
+one over the number of steps that were admissible at that position. [`floors.py`](pretrain_arc/floors.py) searches
+every rule of the task's depth over the joint state of the four grids, merging rules that leave all four grids
+identical, since those share every continuation, and keeping the ones that reproduce the three demonstrations. One
+prune makes depth 4 tractable and loses nothing: at the last step a state is expanded only if each demonstration grid
+can still reach its output in one step, and a step changes at most twice the selected object's cells, so that is quick
+to check. Depth 4 visits about 100,000 joint states and takes tens of seconds a task on one core. The solver this
+describes knows the generator and the rule's depth, and is not told which steps are held out.
+
+The floors also say something about the format before any learner is involved. Three demonstrations fix a single test
+output for 96% of depth-1 tasks and 59% of depth-4 tasks, and where they leave several, the probability concentrates
+on a few, so four attempts bring the floor under 0.02 at every depth. Nor is the shipped answer always the one the
+demonstrations make most probable. At depth 4 it is for 83% of tasks. The metadata marks the rest, and on those a
+learner that answers "wrongly" is answering as the demonstrations say it should.
+
 ## The corpus
 
 The corpus is a stream of tasks whose rules use only the 201 training steps. Any task in it is addressed by
@@ -68,7 +97,7 @@ any number of processes, and is the same every time.
 
 How big it is, naively:
 
-- **Unbounded.** Step sequences over the training steps number 201 at depth 1, 40,401 at depth 2, 8.1 million at
+- **Very.** Step sequences over the training steps number 201 at depth 1, 40,401 at depth 2, 8.1 million at
   depth 3 and 1.6 billion at depth 4. On any one task's grids, 50 to 60 of the 201 steps act at each position, so a
   depth-4 task's rule is one draw from about 10 million that fit its grids. Grids rarely repeat: 100,000 draws held
   13 repeats, which puts the effective number of distinct grids at around 400 million.
@@ -104,8 +133,9 @@ the benchmark.
 
 It ships in [`benchmark/`](benchmark/) in the ARC Prize's Kaggle layout: `challenges.json` (the demonstrations and the
 test input), `solutions.json` (the test output) and `metadata.json` (the rule in codes and words, which step is held
-out, and the floor at 1, 2 and 4 attempts). Task ids look like `held_out-d3-0042`. The package regenerates every task
-bit for bit (`pytest` checks this against the fingerprint `5d9f992ce03cdced`).
+out, the floor at 1, 2 and 4 attempts, and whether the shipped answer is the one the demonstrations make most
+probable). Task ids look like `held_out-d3-0042`. The package regenerates every task bit for bit (`pytest` checks this
+against the fingerprint `5d9f992ce03cdced`).
 
 Score a submission (Kaggle's `{task id: [{"attempt_1": grid, "attempt_2": grid}]}`) with
 
@@ -126,6 +156,12 @@ possible solver's expected score (1 minus the floor). Here are that solver and t
 | `held_out` | 2 | 0.92 / 0.99 | 0.08 / 0.09 | 0.02 / 0.02 |
 | `held_out` | 3 | 0.90 / 0.98 | 0.01 / 0.01 | 0.00 / 0.00 |
 | `held_out` | 4 | 0.82 / 0.95 | 0.00 / 0.00 | 0.00 / 0.00 |
+
+The best-possible column is the one to read a learner against. At held-out depth 4 it is 0.82 on one attempt, so a
+learner at 0.80 there has recovered nearly everything the demonstrations determine, where against 100% it would look
+to be missing a fifth. The same goes for comparing the splits. Held-out tasks are slightly more ambiguous than
+in-distribution ones, so a raw gap between them mixes the tasks' extra ambiguity with the learner's failure to
+compose. Subtract each split's floor from its score and what remains is about the learner.
 
 `one_step` searches all 251 steps for the ones that act on the four inputs and reproduce the three demonstrations,
 and answers with the outputs most of them agree on. At depth 1 that is exactly the best possible solver; from depth 2
