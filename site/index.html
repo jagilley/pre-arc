@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>pretrain-ARC viewer</title>
-<meta name="description" content="Solve pretrain-ARC benchmark tasks and ARC-AGI-1 tasks in the browser, then see the answer, the rule the generator drew, and the Bayes floor.">
+<title>pre-ARC viewer</title>
+<meta name="description" content="Solve pre-ARC benchmark tasks and ARC-AGI-1 tasks in the browser, then see the answer, the rule the generator drew, and the Bayes floor.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Crect width='17' height='17' fill='%23000'/%3E%3Crect x='1' y='1' width='4.5' height='4.5' fill='%230074D9'/%3E%3Crect x='11.5' y='1' width='4.5' height='4.5' fill='%23FFDC00'/%3E%3Crect x='6.25' y='6.25' width='4.5' height='4.5' fill='%23FF4136'/%3E%3Crect x='1' y='11.5' width='4.5' height='4.5' fill='%232ECC40'/%3E%3Crect x='11.5' y='11.5' width='4.5' height='4.5' fill='%237FDBFF'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -219,10 +219,10 @@ pre.code { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; bac
 
 <header class="bar">
   <div class="bar-in">
-    <h1 class="brand"><span class="glyph" aria-hidden="true"><i style="background:#0074D9"></i><i style="background:#000"></i><i style="background:#FFDC00"></i><i style="background:#000"></i><i style="background:#FF4136"></i><i style="background:#000"></i><i style="background:#2ECC40"></i><i style="background:#000"></i><i style="background:#7FDBFF"></i></span>pretrain-ARC viewer</h1>
+    <h1 class="brand"><span class="glyph" aria-hidden="true"><i style="background:#0074D9"></i><i style="background:#000"></i><i style="background:#FFDC00"></i><i style="background:#000"></i><i style="background:#FF4136"></i><i style="background:#000"></i><i style="background:#2ECC40"></i><i style="background:#000"></i><i style="background:#7FDBFF"></i></span>pre-ARC viewer</h1>
     <div class="ctl"><span class="ctl-label">Tasks</span>
       <div class="seg" id="src">
-        <button type="button" data-src="pre" aria-pressed="false" title="The pretrain-ARC benchmark: 2,560 tasks from a known rule grammar">pretrain-ARC</button>
+        <button type="button" data-src="pre" aria-pressed="false" title="The pre-ARC benchmark: 2,560 tasks from a known rule grammar">pre-ARC</button>
         <button type="button" data-src="arc1-training" aria-pressed="false">ARC<span class="wide">-AGI</span>-1 training</button>
         <button type="button" data-src="arc1-evaluation" aria-pressed="false">ARC<span class="wide">-AGI</span>-1 evaluation</button>
       </div>
@@ -285,7 +285,7 @@ pre.code { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; bac
 
 <footer class="foot">
   <div class="foot-in">
-    <span><a href="https://github.com/jagilley/pretrain-arc">pretrain-ARC on GitHub</a></span>
+    <span><a href="https://github.com/jagilley/pre-arc">pre-ARC on GitHub</a></span>
     <span>ARC-AGI-1 tasks: François Chollet, <a href="https://github.com/fchollet/ARC-AGI">ARC-AGI</a>, <a href="data/licenses/ARC-AGI-LICENSE.txt">Apache-2.0</a></span>
     <span>Solvers for ARC-AGI-1 training tasks: Michael Hodel, <a href="https://github.com/michaelhodel/arc-dsl">arc-dsl</a>, <a href="data/licenses/arc-dsl-LICENSE.txt">MIT</a></span>
     <span>Your attempts never leave this browser unless you download them.</span>
@@ -329,7 +329,7 @@ const plural = (n, w, ws) => `${n} ${n === 1 ? w : ws || w + "s"}`;
 // ------------------------------------------------------------------------------------------------ storage
 // One record a task: {v, set, task, tests: [{tries, ok, ok_at, subs}], revealed, gave_up, seconds, notes, started, updated}.
 // Kept in this browser's localStorage only; "Download my attempts" saves them all as JSON.
-const LS_KEY = "pretrain-arc.recs.v1", LS_UI = "pretrain-arc.ui.v1";
+const LS_KEY = "pre-arc.recs.v1", LS_UI = "pre-arc.ui.v1";
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
 const Store = {
@@ -361,13 +361,13 @@ el("download").addEventListener("click", () => {
   timerLeave(); if (state.task) timerOpen(Store.key(ui.set, state.task.id));
   const recs = Object.values(Store.recs).sort((a, b) => (a.started || 0) - (b.started || 0));
   const out = {
-    what: "pretrain-ARC viewer: attempts made in one browser",
+    what: "pre-ARC viewer: attempts made in one browser",
     exported: new Date().toISOString(),
     tries_per_test: ATT,
     records: recs.map(r => Object.assign({ task_id: taskIdOf(r), status: status(r) }, r)),
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: "application/json" }));
-  const a = h("a", { href: url, download: `pretrain-arc-attempts-${out.exported.slice(0, 10)}.json` });
+  const a = h("a", { href: url, download: `pre-arc-attempts-${out.exported.slice(0, 10)}.json` });
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
@@ -514,7 +514,7 @@ function renderAbout() {
       ? `Once you solve a task, run out of tries, or give up, the reveal shows the answer and Michael Hodel's hand-written solver for it: a short program in his <a href="https://github.com/michaelhodel/arc-dsl">arc-dsl</a>.`
       : `Once you solve a task, run out of tries, or give up, the reveal shows the answer.`,
   ] : [
-    `The pretrain-ARC benchmark's ${n} tasks with rules of depth ${S.depth} in the <b>${SPLIT_LABEL[S.split].toLowerCase()}</b> split: the same tasks as <span class="mono">benchmark/challenges.json</span>, where this set's ids look like <span class="mono">${ui.set}-0042</span>. Each has three demonstrations and one test, all 8×8 with a blank one-cell border, holding 4–5 objects of different sizes (2–6 cells) in the task's 3 colours.`,
+    `The pre-ARC benchmark's ${n} tasks with rules of depth ${S.depth} in the <b>${SPLIT_LABEL[S.split].toLowerCase()}</b> split: the same tasks as <span class="mono">benchmark/challenges.json</span>, where this set's ids look like <span class="mono">${ui.set}-0042</span>. Each has three demonstrations and one test, all 8×8 with a blank one-cell border, holding 4–5 objects of different sizes (2–6 cells) in the task's 3 colours.`,
     `<b>The next paragraph gives away the rule space.</b> Skip it if you'd rather work the tasks out cold.`,
     `An object is a 4-connected patch of one colour. A rule is ${plural(S.depth, "step")} applied in order. Each step picks one object (the largest; the smallest; the first or last in reading order, by its first cell; or the first object of a given colour) and does one thing to it: recolour it, delete it, move it one cell, flip it inside its bounding box, or stamp a copy one blank cell past its bounding box. Every step changes every grid of the task. Objects are found afresh after each step, so a step can merge or split objects for the next.`,
     S.split === "in_dist"

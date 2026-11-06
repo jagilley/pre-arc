@@ -6,11 +6,11 @@
 import numpy as np
 import pytest
 
-from pretrain_arc import benchmark as B
-from pretrain_arc import corpus as C
-from pretrain_arc import floors as F
-from pretrain_arc import generator as G
-from pretrain_arc import score as S
+from pre_arc import benchmark as B
+from pre_arc import corpus as C
+from pre_arc import floors as F
+from pre_arc import generator as G
+from pre_arc import score as S
 
 
 @pytest.fixture(scope="module")

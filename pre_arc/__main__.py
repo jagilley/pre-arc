@@ -1,4 +1,4 @@
-"""python -m pretrain_arc <command>
+"""python -m pre_arc <command>
 
   corpus     write corpus shards as JSONL, one task a line
   score      score a submission (Kaggle form) on the benchmark, beside the best possible solver
@@ -78,7 +78,7 @@ def cmd_show(a):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="python -m pretrain_arc", description=__doc__,
+    ap = argparse.ArgumentParser(prog="python -m pre_arc", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("corpus", help="write corpus shards as JSONL")
